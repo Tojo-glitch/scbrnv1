@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@theme {
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* Force light color-scheme globally — prevents OS dark mode from turning
+   <input>, <textarea>, <select> black (Tailwind v4 inherits OS scheme by default) */
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #F9F9F7;
+  color: #121212;
+  font-family: var(--font-sans);
+}
+
+/* Ensure all form fields always have light background + dark text */
+input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  color: #121212 !important;
+  background-color: #ffffff;
+  color-scheme: light;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(18, 18, 18, 0.35) !important;
+  opacity: 1;
+}
+
+/* Custom styles for high-contrast scrolling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(18, 18, 18, 0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(18, 18, 18, 0.25);
+}
