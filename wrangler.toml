@@ -1,5 +1,5 @@
 # Cloudflare Pages configuration
 # NOTE: Build/deploy now happens via GitHub Actions (.github/workflows/deploy.yml)
 # This file is kept for local `wrangler pages dev` testing only.
-name = "mental-brain-dump"
+name = "scbrnv1"
 pages_build_output_dir = "dist"

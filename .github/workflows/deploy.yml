@@ -39,4 +39,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           apiEmail: ${{ secrets.CLOUDFLARE_EMAIL }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=mental-brain-dump
+          command: pages deploy dist --project-name=scbrnv1
