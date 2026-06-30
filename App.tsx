@@ -32,7 +32,8 @@ import {
   Search,
   HelpCircle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  LogOut
 } from 'lucide-react';
 
 // --- TYPES ---
@@ -137,6 +138,145 @@ const INITIAL_TASKS: Task[] = [
   { id: 't6', name: 'ตรวจสอบเป้าหมายชีวิตและจัดระเบียบตู้โต๊ะทำงาน', type: 'monthly', timing: ['25'], active: true, scheduleMode: 'all_days', customDays: [] },
 ];
 
+// ─── Rich Text Editor ──────────────────────────────────────────────────────
+// Lightweight contentEditable-based editor with formatting toolbar.
+// Stores content as sanitized HTML string in step.instruction.
+
+const RICH_TEXT_SIZES = [
+  { label: 'เล็ก', value: '12px' },
+  { label: 'ปกติ', value: '14px' },
+  { label: 'ใหญ่', value: '18px' },
+  { label: 'ใหญ่มาก', value: '24px' },
+];
+
+function sanitizeRichHtml(html: string): string {
+  // Strip script/style tags and event handler attributes — basic XSS guard
+  let clean = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '')
+    .replace(/javascript:/gi, '');
+  return clean;
+}
+
+function RichTextEditor({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+}) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [isFocused, setIsFocused] = useState(false);
+
+  // Sync external value changes into the editor (e.g. switching between steps)
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || '';
+    }
+  }, [value]);
+
+  const exec = (command: string, arg?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, arg);
+    if (editorRef.current) onChange(sanitizeRichHtml(editorRef.current.innerHTML));
+  };
+
+  const applyFontSize = (size: string) => {
+    editorRef.current?.focus();
+    document.execCommand('fontSize', false, '7'); // use placeholder size 7
+    if (editorRef.current) {
+      // Replace all <font size="7"> with actual px size via span
+      const fonts = editorRef.current.querySelectorAll('font[size="7"]');
+      fonts.forEach(f => {
+        const span = document.createElement('span');
+        span.style.fontSize = size;
+        span.innerHTML = f.innerHTML;
+        f.replaceWith(span);
+      });
+      onChange(sanitizeRichHtml(editorRef.current.innerHTML));
+    }
+  };
+
+  const applyHighlight = () => exec('hiliteColor', '#FDE68A');
+  const applyRed = () => exec('foreColor', '#DC2626');
+  const applyBlue = () => exec('foreColor', '#2563EB');
+  const clearColor = () => exec('foreColor', '#121212');
+
+  const btnClass = "w-7 h-7 flex items-center justify-center rounded border border-black/10 bg-white hover:bg-black/5 active:scale-95 transition-all cursor-pointer text-[#121212]";
+
+  return (
+    <div className={`border rounded-lg overflow-hidden transition-all ${isFocused ? 'border-black ring-1 ring-black/10' : 'border-black/10'}`}>
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 flex-wrap bg-[#F9F9F7] border-b border-black/10 px-2 py-1.5">
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} className={btnClass} title="ตัวหนา">
+          <span className="font-black text-xs">B</span>
+        </button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('underline')} className={btnClass} title="ขีดเส้นใต้">
+          <span className="text-xs underline">U</span>
+        </button>
+        <div className="w-px h-5 bg-black/10 mx-0.5" />
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={applyRed} className={btnClass} title="ตัวอักษรสีแดง">
+          <span className="w-3.5 h-3.5 rounded-full bg-red-600 block" />
+        </button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={applyBlue} className={btnClass} title="ตัวอักษรสีน้ำเงิน">
+          <span className="w-3.5 h-3.5 rounded-full bg-blue-600 block" />
+        </button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={applyHighlight} className={btnClass} title="ไฮไลต์สีเหลือง">
+          <span className="w-3.5 h-3.5 rounded-full bg-yellow-300 border border-yellow-500 block" />
+        </button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={clearColor} className={btnClass} title="ล้างสีตัวอักษร">
+          <X className="w-3 h-3" />
+        </button>
+        <div className="w-px h-5 bg-black/10 mx-0.5" />
+        <select
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => { if (e.target.value) applyFontSize(e.target.value); e.target.value = ''; }}
+          defaultValue=""
+          className="h-7 text-[10px] font-bold bg-white border border-black/10 rounded px-1.5 cursor-pointer text-[#121212] focus:outline-none"
+          style={{ colorScheme: 'light' }}
+          title="ขนาดตัวอักษร"
+        >
+          <option value="" disabled>ขนาด</option>
+          {RICH_TEXT_SIZES.map(s => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Editable area */}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        onInput={() => {
+          if (editorRef.current) onChange(sanitizeRichHtml(editorRef.current.innerHTML));
+        }}
+        data-placeholder={placeholder}
+        className="w-full min-h-[60px] px-3 py-2 text-sm leading-relaxed text-[#121212] focus:outline-none bg-white [&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-black/30"
+        style={{ wordBreak: 'break-word' }}
+      />
+    </div>
+  );
+}
+
+// Render rich HTML safely for display (read-only views)
+function RichTextDisplay({ html, className }: { html: string; className?: string }) {
+  if (!html || html.trim() === '') return null;
+  return (
+    <div
+      className={className}
+      style={{ wordBreak: 'break-word' }}
+      dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(html) }}
+    />
+  );
+}
+
 export default function App({ session }: { session: Session }) {
   const userId = session.user.id;
 
@@ -195,13 +335,18 @@ export default function App({ session }: { session: Session }) {
   const [activeHandoverTask, setActiveHandoverTask] = useState<{ task: Task; hourStr?: string } | null>(null);
   const [handoverSkipNote, setHandoverSkipNote] = useState('');
   // SOP step progress checkboxes (in-session only, resets when modal closes)
-  const [sopStepChecked, setSopStepChecked] = useState<Record<number, boolean>>({});
+  const [sopStepCheckedByTask, setSopStepCheckedByTask] = useState<Record<string, Record<number, boolean>>>({});
 
   // Fullscreen Image Lightbox State
   const [focusedImageModal, setFocusedImageModal] = useState<string | null>(null);
   // Lightbox navigation: list of images in current context and current index
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number>(0);
+  // Zoom/pan state for lightbox
+  const [lbZoom, setLbZoom] = useState(1);
+  const [lbPan, setLbPan] = useState({ x: 0, y: 0 });
+  const lbDragRef = useRef<{ dragging: boolean; startX: number; startY: number; panX: number; panY: number }>({ dragging: false, startX: 0, startY: 0, panX: 0, panY: 0 });
+  const lbPinchRef = useRef<{ active: boolean; startDist: number; startZoom: number }>({ active: false, startDist: 0, startZoom: 1 });
 
   // Q&A System State
   interface QaItem {
@@ -209,6 +354,7 @@ export default function App({ session }: { session: Session }) {
     question: string;
     answer: string;
     category: string; // 'handover' | 'system' | 'task' | 'other'
+    linkedTaskId?: string; // links this Q&A to a specific task in the library
     createdAt: string;
   }
   const [qas, setQas] = useState<QaItem[]>([]);
@@ -219,6 +365,7 @@ export default function App({ session }: { session: Session }) {
   const [newQaQuestion, setNewQaQuestion] = useState('');
   const [newQaAnswer, setNewQaAnswer] = useState('');
   const [newQaCategory, setNewQaCategory] = useState<string>('handover');
+  const [newQaLinkedTaskId, setNewQaLinkedTaskId] = useState<string>('');
 
   // Phase 3 additions
   const [taskLibrarySearch, setTaskLibrarySearch] = useState('');      // 3A: search
@@ -274,13 +421,15 @@ export default function App({ session }: { session: Session }) {
     e.target.value = '';
   };
 
-  const handleAddQa = async (question: string, answer: string, category: string) => {
+  const handleAddQa = async (question: string, answer: string, category: string, linkedTaskId?: string) => {
     if (!question.trim() || !answer.trim()) return;
-    const newItem: QaItem = { id: 'qa_' + Date.now(), question: question.trim(), answer: answer.trim(), category, createdAt: new Date().toISOString() };
+    const newItem: QaItem = { id: 'qa_' + Date.now(), question: question.trim(), answer: answer.trim(), category, linkedTaskId: linkedTaskId || undefined, createdAt: new Date().toISOString() };
     const updated = [newItem, ...qas];
     setQas(updated);
-    setNewQaQuestion(''); setNewQaAnswer(''); setShowAddQaForm(false);
-    try { await db.upsertQaItem({ id: newItem.id, question: newItem.question, answer: newItem.answer, category: newItem.category as any }); }
+    setNewQaQuestion(''); setNewQaAnswer(''); setShowAddQaForm(false); setNewQaLinkedTaskId('');
+    // Persist linkedTaskId by encoding it into category as "linked:{taskId}" — db has no separate column for it
+    const persistCategory = linkedTaskId ? `linked:${linkedTaskId}` : category;
+    try { await db.upsertQaItem({ id: newItem.id, question: newItem.question, answer: newItem.answer, category: persistCategory as any }); }
     catch (err) { console.error('addQa:', err); }
   };
 
@@ -290,6 +439,8 @@ export default function App({ session }: { session: Session }) {
     setLightboxImages(images);
     setLightboxIndex(startIndex);
     setFocusedImageModal(images[startIndex]);
+    setLbZoom(1);
+    setLbPan({ x: 0, y: 0 });
   };
 
   const lightboxNav = (dir: 1 | -1) => {
@@ -297,6 +448,79 @@ export default function App({ session }: { session: Session }) {
     if (next < 0 || next >= lightboxImages.length) return;
     setLightboxIndex(next);
     setFocusedImageModal(lightboxImages[next]);
+    setLbZoom(1);
+    setLbPan({ x: 0, y: 0 });
+  };
+
+  const closeLightbox = () => {
+    setFocusedImageModal(null);
+    setLightboxImages([]);
+    setLbZoom(1);
+    setLbPan({ x: 0, y: 0 });
+  };
+
+  const lbZoomIn = () => setLbZoom(z => Math.min(z + 0.5, 5));
+  const lbZoomOut = () => setLbZoom(z => {
+    const next = Math.max(z - 0.5, 1);
+    if (next === 1) setLbPan({ x: 0, y: 0 });
+    return next;
+  });
+  const lbZoomReset = () => { setLbZoom(1); setLbPan({ x: 0, y: 0 }); };
+
+  // Mouse drag-to-pan (desktop)
+  const lbHandleMouseDown = (e: React.MouseEvent) => {
+    if (lbZoom <= 1) return;
+    lbDragRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, panX: lbPan.x, panY: lbPan.y };
+  };
+  const lbHandleMouseMove = (e: React.MouseEvent) => {
+    if (!lbDragRef.current.dragging) return;
+    const dx = e.clientX - lbDragRef.current.startX;
+    const dy = e.clientY - lbDragRef.current.startY;
+    setLbPan({ x: lbDragRef.current.panX + dx, y: lbDragRef.current.panY + dy });
+  };
+  const lbHandleMouseUp = () => { lbDragRef.current.dragging = false; };
+
+  // Wheel zoom (desktop)
+  const lbHandleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.25 : 0.25;
+    setLbZoom(z => {
+      const next = Math.min(Math.max(z + delta, 1), 5);
+      if (next === 1) setLbPan({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  // Touch pinch-to-zoom + drag pan (mobile)
+  const lbTouchDist = (touches: React.TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+  const lbHandleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      lbPinchRef.current = { active: true, startDist: lbTouchDist(e.touches), startZoom: lbZoom };
+    } else if (e.touches.length === 1 && lbZoom > 1) {
+      lbDragRef.current = { dragging: true, startX: e.touches[0].clientX, startY: e.touches[0].clientY, panX: lbPan.x, panY: lbPan.y };
+    }
+  };
+  const lbHandleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && lbPinchRef.current.active) {
+      e.preventDefault();
+      const newDist = lbTouchDist(e.touches);
+      const ratio = newDist / lbPinchRef.current.startDist;
+      const next = Math.min(Math.max(lbPinchRef.current.startZoom * ratio, 1), 5);
+      setLbZoom(next);
+      if (next === 1) setLbPan({ x: 0, y: 0 });
+    } else if (e.touches.length === 1 && lbDragRef.current.dragging) {
+      const dx = e.touches[0].clientX - lbDragRef.current.startX;
+      const dy = e.touches[0].clientY - lbDragRef.current.startY;
+      setLbPan({ x: lbDragRef.current.panX + dx, y: lbDragRef.current.panY + dy });
+    }
+  };
+  const lbHandleTouchEnd = () => {
+    lbPinchRef.current.active = false;
+    lbDragRef.current.dragging = false;
   };
 
   const handleDeleteQa = async (id: string) => {
@@ -398,9 +622,16 @@ export default function App({ session }: { session: Session }) {
         });
         setShortnotes(mappedNotes);
 
-        // Map QA items
+        // Map QA items — linkedTaskId is encoded as category="task:{taskId}" for DB persistence
         const mappedQas: QaItem[] = dbQas.length > 0
-          ? dbQas.map((q: any) => ({ id: q.id, question: q.question, answer: q.answer, category: q.category, createdAt: new Date().toISOString() }))
+          ? dbQas.map((q: any) => {
+              const rawCat = q.category as string;
+              if (rawCat && rawCat.startsWith('linked:')) {
+                const taskId = rawCat.slice(7);
+                return { id: q.id, question: q.question, answer: q.answer, category: 'task', linkedTaskId: taskId, createdAt: new Date().toISOString() };
+              }
+              return { id: q.id, question: q.question, answer: q.answer, category: rawCat, createdAt: new Date().toISOString() };
+            })
           : DEFAULT_QA_ITEMS;
         setQas(mappedQas);
 
@@ -943,8 +1174,8 @@ export default function App({ session }: { session: Session }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size — warn if > 2MB
-    const MAX_SIZE_MB = 2;
+    // Validate file size — warn if > 5MB (Supabase Storage handles larger files fine)
+    const MAX_SIZE_MB = 5;
     if (file.size > MAX_SIZE_MB * 1024 * 1024) {
       alert(`ขนาดไฟล์รูปภาพใหญ่เกินไป (${(file.size / 1024 / 1024).toFixed(1)} MB)\nกรุณาใช้รูปที่มีขนาดไม่เกิน ${MAX_SIZE_MB} MB เพื่อป้องกันปัญหาการบันทึก`);
       e.target.value = '';
@@ -956,7 +1187,7 @@ export default function App({ session }: { session: Session }) {
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
-      const MAX_DIM = 1200;
+      const MAX_DIM = 1600;
       let { width, height } = img;
       if (width > MAX_DIM || height > MAX_DIM) {
         if (width > height) {
@@ -1156,6 +1387,7 @@ export default function App({ session }: { session: Session }) {
   };
 
   const handleSignOut = async () => {
+    if (!window.confirm('ต้องการออกจากระบบใช่หรือไม่?')) return;
     await supabase.auth.signOut();
   };
 
@@ -1297,15 +1529,18 @@ export default function App({ session }: { session: Session }) {
             <span className="hidden sm:block text-[8px] sm:text-[9px] font-black tracking-tight text-center leading-none">วันทำงาน ({workdays.length})</span>
           </button>
 
-          <div className="flex flex-col items-center space-y-1">
-            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-emerald-500 rounded-full animate-pulse shadow-sm" />
-            <span className="text-[7px] sm:text-[8px] font-mono font-black tracking-widest text-black/30">V3.0.DB</span>
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-emerald-500 rounded-full animate-pulse shadow-sm" />
+              <span className="text-[7px] sm:text-[8px] font-mono font-black tracking-widest text-black/30">V3.0.DB</span>
+            </div>
             <button
               onClick={handleSignOut}
-              className="text-[7px] sm:text-[8px] font-mono font-black text-black/25 hover:text-red-500 transition-colors cursor-pointer uppercase tracking-widest mt-1"
+              className="flex flex-col items-center gap-0.5 text-red-500 hover:text-white hover:bg-red-500 active:scale-95 transition-all cursor-pointer px-2 py-2 rounded-lg border border-red-200 hover:border-red-500"
               title={`ออกจากระบบ (${session.user.email})`}
             >
-              LOGOUT
+              <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider hidden sm:block">ออกจากระบบ</span>
             </button>
           </div>
         </div>
@@ -1646,7 +1881,6 @@ export default function App({ session }: { session: Session }) {
                                           handleUpdateTaskStatus(t.id, 'pending', hourStr);
                                         } else {
                                           setActiveHandoverTask({ task: t, hourStr });
-                                          setSopStepChecked({});
                                           setHandoverSkipNote('');
                                         }
                                       }}
@@ -2448,15 +2682,13 @@ export default function App({ session }: { session: Session }) {
                                   className="w-full bg-white border border-black/10 rounded px-3 py-2 text-xs focus:outline-none focus:border-black font-semibold text-[#121212]"
                                 />
                                 
-                                <textarea
-                                  placeholder="พิมพ์คำอธิบายประกอบและรายละเอียดของขั้นตอนในหัวข้อนี้..."
+                                <RichTextEditor
                                   value={step.instruction}
-                                  rows={2}
-                                  onChange={(e) => {
-                                    const updated = formSopSteps.map(s => s.id === step.id ? { ...s, instruction: e.target.value } : s);
+                                  onChange={(html) => {
+                                    const updated = formSopSteps.map(s => s.id === step.id ? { ...s, instruction: html } : s);
                                     setFormSopSteps(updated);
                                   }}
-                                  className="w-full bg-white border border-black/10 rounded px-3 py-2 text-xs focus:outline-none focus:border-black font-sans leading-relaxed text-[#121212]"
+                                  placeholder="พิมพ์คำอธิบายประกอบและรายละเอียดของขั้นตอนในหัวข้อนี้... (เลือกตัวหนา สี ไฮไลต์ ได้จากแถบเครื่องมือด้านบน)"
                                 />
                               </div>
 
@@ -2482,9 +2714,9 @@ export default function App({ session }: { session: Session }) {
                                       let processed = 0;
                                       const newImages: string[] = [];
                                       toProcess.forEach(file => {
-                                        if (file.size > 2 * 1024 * 1024) {
+                                        if (file.size > 5 * 1024 * 1024) {
                                           processed++;
-                                          alert(`ไฟล์ "${file.name}" ใหญ่เกิน 2MB — ข้ามไป`);
+                                          alert(`ไฟล์ "${file.name}" ใหญ่เกิน 5MB — ข้ามไป`);
                                           if (processed === toProcess.length) {
                                             if (newImages.length > 0) {
                                               const updated = formSopSteps.map(s => s.id === step.id ? { ...s, images: [...currentImages, ...newImages] } : s);
@@ -2497,7 +2729,7 @@ export default function App({ session }: { session: Session }) {
                                         const url = URL.createObjectURL(file);
                                         img.onload = () => {
                                           URL.revokeObjectURL(url);
-                                          const MAX = 1200;
+                                          const MAX = 1600;
                                           let { width, height } = img;
                                           if (width > MAX || height > MAX) {
                                             if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -3215,6 +3447,42 @@ export default function App({ session }: { session: Session }) {
                     </button>
                   ))}
                 </div>
+
+                {/* Dynamic task-linked filters — only show tasks that actually have linked Q&A */}
+                {(() => {
+                  const linkedTaskIds = Array.from(new Set(qas.filter(q => q.linkedTaskId).map(q => q.linkedTaskId)));
+                  if (linkedTaskIds.length === 0) return null;
+                  return (
+                    <div className="pt-1">
+                      <label className="block text-[9px] uppercase tracking-wider font-bold text-black/35 mb-1.5">
+                        กรองตามงานที่เชื่อมโยง (Linked Task)
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {linkedTaskIds.map(tid => {
+                          const linkedTask = tasks.find(t => t.id === tid);
+                          if (!linkedTask) return null;
+                          const filterKey = `task:${tid}`;
+                          const count = qas.filter(q => q.linkedTaskId === tid).length;
+                          return (
+                            <button
+                              key={tid}
+                              onClick={() => setSelectedQaCategory(filterKey)}
+                              className={`px-2.5 py-1.5 rounded-full border text-[10px] font-bold transition-all flex items-center gap-1 ${
+                                selectedQaCategory === filterKey
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-blue-50 text-blue-700 border-blue-200/50 hover:border-blue-400'
+                              }`}
+                            >
+                              <Link2 className="w-2.5 h-2.5" />
+                              <span className="truncate max-w-[140px]">{linkedTask.name}</span>
+                              <span className="opacity-60">({count})</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Add QA Quick Button */}
@@ -3280,8 +3548,31 @@ export default function App({ session }: { session: Session }) {
                     </select>
                   </div>
 
+                  <div className="space-y-1">
+                    <label className="block text-[9px] uppercase tracking-wider font-bold text-black/45 flex items-center gap-1">
+                      <Link2 className="w-3 h-3" />
+                      เชื่อมโยงกับงาน (Link to Task) — ไม่บังคับ
+                    </label>
+                    <select
+                      value={newQaLinkedTaskId}
+                      onChange={(e) => setNewQaLinkedTaskId(e.target.value)}
+                      className="w-full bg-[#FBFBF9] border border-black/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-black font-sans font-bold text-[#121212]"
+                      style={{ colorScheme: 'light' }}
+                    >
+                      <option value="">— ไม่เชื่อมโยง (None) —</option>
+                      {tasks.map(t => (
+                        <option key={t.id} value={t.id}>
+                          [{t.type === 'hourly' ? 'รายชั่วโมง' : t.type === 'daily' ? 'รายวัน' : 'รายเดือน'}] {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-black/35 italic">
+                      เลือกงานที่เกี่ยวข้อง เพื่อให้คำถามนี้แสดงเป็นหมวดหมู่แยกตามงานจริง
+                    </p>
+                  </div>
+
                   <button
-                    onClick={() => handleAddQa(newQaQuestion, newQaAnswer, newQaCategory)}
+                    onClick={() => handleAddQa(newQaQuestion, newQaAnswer, newQaCategory, newQaLinkedTaskId)}
                     disabled={!newQaQuestion.trim() || !newQaAnswer.trim()}
                     className="w-full py-2.5 bg-black hover:bg-black/85 disabled:bg-black/20 text-white text-xs font-black uppercase tracking-widest rounded-lg transition-all"
                   >
@@ -3303,9 +3594,21 @@ export default function App({ session }: { session: Session }) {
               const searchLower = qaSearchQuery.toLowerCase();
               const filtered = qas.filter(q => {
                 const matchSearch = q.question.toLowerCase().includes(searchLower) || q.answer.toLowerCase().includes(searchLower);
-                const matchCategory = selectedQaCategory === 'all' || q.category === selectedQaCategory;
+                let matchCategory = true;
+                if (selectedQaCategory === 'all') {
+                  matchCategory = true;
+                } else if (selectedQaCategory.startsWith('task:')) {
+                  const tid = selectedQaCategory.slice(5);
+                  matchCategory = q.linkedTaskId === tid;
+                } else {
+                  matchCategory = q.category === selectedQaCategory;
+                }
                 return matchSearch && matchCategory;
               });
+
+              const linkedTaskLabel = selectedQaCategory.startsWith('task:')
+                ? tasks.find(t => t.id === selectedQaCategory.slice(5))?.name
+                : null;
 
               return (
                 <div className="space-y-6">
@@ -3318,8 +3621,9 @@ export default function App({ session }: { session: Session }) {
                     </div>
                     
                     {selectedQaCategory !== 'all' && (
-                      <span className="text-[9px] font-black uppercase tracking-wider bg-black text-white px-2 py-1 rounded">
-                        หมวดหมู่: {selectedQaCategory}
+                      <span className="text-[9px] font-black uppercase tracking-wider bg-black text-white px-2 py-1 rounded flex items-center gap-1">
+                        {linkedTaskLabel && <Link2 className="w-2.5 h-2.5" />}
+                        หมวดหมู่: {linkedTaskLabel ?? selectedQaCategory}
                       </span>
                     )}
                   </div>
@@ -3363,10 +3667,20 @@ export default function App({ session }: { session: Session }) {
                               className="p-5 flex items-start justify-between gap-4 cursor-pointer select-none"
                             >
                               <div className="space-y-1.5 flex-1">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className={`text-[9px] uppercase tracking-wider font-black px-1.5 py-0.5 rounded border ${catStyle}`}>
                                     {catLabel}
                                   </span>
+                                  {item.linkedTaskId && (() => {
+                                    const linkedTask = tasks.find(t => t.id === item.linkedTaskId);
+                                    if (!linkedTask) return null;
+                                    return (
+                                      <span className="text-[9px] uppercase tracking-wider font-black px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200/50 flex items-center gap-1">
+                                        <Link2 className="w-2.5 h-2.5" />
+                                        <span className="normal-case truncate max-w-[120px]">{linkedTask.name}</span>
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                                 <h4 className="text-sm font-bold text-black leading-snug">
                                   {item.question}
@@ -3737,6 +4051,7 @@ export default function App({ session }: { session: Session }) {
                   {/* Progress summary */}
                   {(() => {
                     const total = activeHandoverTask.task.sopSteps!.length;
+                    const sopStepChecked = sopStepCheckedByTask[activeHandoverTask.task.id] ?? {};
                     const done = Object.values(sopStepChecked).filter(Boolean).length;
                     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                     return (
@@ -3759,14 +4074,18 @@ export default function App({ session }: { session: Session }) {
                       const stepImages: string[] = (step.images && step.images.length > 0)
                         ? step.images
                         : (step.image ? [step.image] : []);
-                      const isChecked = !!sopStepChecked[idx];
+                      const currentTaskId = activeHandoverTask.task.id;
+                      const isChecked = !!(sopStepCheckedByTask[currentTaskId]?.[idx]);
                       return (
                         <div key={step.id || idx} className={`border rounded-xl p-4 md:p-5 space-y-3 transition-all duration-200 ${isChecked ? 'bg-emerald-50/60 border-emerald-300/60' : 'bg-[#FAF9F5] border-black/10'}`}>
                           <div className="flex items-start gap-3">
-                            {/* Step progress checkbox */}
+                            {/* Step progress checkbox — persists per task across modal open/close */}
                             <button
                               type="button"
-                              onClick={() => setSopStepChecked(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                              onClick={() => setSopStepCheckedByTask(prev => ({
+                                ...prev,
+                                [currentTaskId]: { ...(prev[currentTaskId] ?? {}), [idx]: !(prev[currentTaskId]?.[idx]) }
+                              }))}
                               className={`w-6 h-6 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer ${isChecked ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-black/25 text-transparent hover:border-emerald-400'}`}
                               title={isChecked ? 'ยกเลิกติ๊ก' : 'ติ๊กเสร็จแล้ว'}
                             >
@@ -3793,40 +4112,42 @@ export default function App({ session }: { session: Session }) {
                                 )}
                               </div>
 
-                              {step.instruction && (
-                                <p className={`text-xs leading-relaxed whitespace-pre-wrap font-sans font-semibold mt-2 transition-all ${isChecked ? 'text-black/40' : 'text-[#121212]'}`}>
-                                  {step.instruction}
-                                </p>
+                              {step.instruction && step.instruction.trim() !== '' && (
+                                <RichTextDisplay
+                                  html={step.instruction}
+                                  className={`text-xs leading-relaxed mt-2 transition-all ${isChecked ? 'opacity-40' : ''}`}
+                                />
                               )}
 
                               {/* Multi-image gallery — larger thumbnails, click to lightbox with prev/next */}
                               {stepImages.length > 0 && (
                                 <div className="space-y-2 mt-2">
                                   <span className="text-[9px] uppercase tracking-wider font-black text-black/35">
-                                    รูปภาพประกอบขั้นตอน ({stepImages.length} รูป — คลิกเพื่อขยาย)
+                                    รูปภาพประกอบขั้นตอน ({stepImages.length} รูป — แตะเพื่อขยาย)
                                   </span>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
                                     {stepImages.map((imgSrc, imgIdx) => (
                                       <div
                                         key={imgIdx}
-                                        className="relative group cursor-pointer overflow-hidden rounded-lg border border-black/10 bg-white aspect-[4/3] flex items-center justify-center"
+                                        className="relative group cursor-pointer overflow-hidden rounded-md border border-black/10 bg-white aspect-square flex items-center justify-center"
                                         onClick={() => openLightbox(stepImages, imgIdx)}
                                       >
                                         <img
                                           src={imgSrc}
                                           alt={`Step ${idx + 1} รูปที่ ${imgIdx + 1}`}
                                           className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                          loading="lazy"
                                         />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 flex items-center justify-center transition-all duration-200">
-                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded-full p-2 shadow-lg">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0zM11 8v6M8 11h6" />
-                                            </svg>
+                                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0zM11 8v6M8 11h6" />
+                                          </svg>
+                                        </div>
+                                        {stepImages.length > 1 && (
+                                          <div className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-[8px] font-mono font-bold px-1 rounded leading-tight">
+                                            {imgIdx + 1}/{stepImages.length}
                                           </div>
-                                        </div>
-                                        <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] font-mono font-bold px-1 py-0.5 rounded">
-                                          {imgIdx + 1}/{stepImages.length}
-                                        </div>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
@@ -3914,50 +4235,100 @@ export default function App({ session }: { session: Session }) {
               >
                 ปิดหน้าต่าง
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleUpdateTaskStatus(
-                    activeHandoverTask.task.id, 
-                    'skipped', 
-                    activeHandoverTask.hourStr,
-                    handoverSkipNote
+              {(() => {
+                const stepsArr = activeHandoverTask.task.sopSteps ?? [];
+                const totalSteps = stepsArr.length;
+                const sopStepChecked = sopStepCheckedByTask[activeHandoverTask.task.id] ?? {};
+                const doneSteps = Object.values(sopStepChecked).filter(Boolean).length;
+                const allStepsDone = totalSteps > 0 && doneSteps >= totalSteps;
+
+                if (allStepsDone) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleUpdateTaskStatus(
+                          activeHandoverTask.task.id,
+                          'done',
+                          activeHandoverTask.hourStr,
+                          handoverSkipNote || 'ทำครบทุกขั้นตอน SOP แล้ว'
+                        );
+                        setSopStepCheckedByTask(prev => {
+                          const next = { ...prev };
+                          delete next[activeHandoverTask.task.id];
+                          return next;
+                        });
+                        setActiveHandoverTask(null);
+                        setHandoverSkipNote('');
+                      }}
+                      className="order-1 sm:order-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-widest rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      ยืนยันเสร็จงาน (ครบ {totalSteps}/{totalSteps} ขั้นตอน)
+                    </button>
                   );
-                  setActiveHandoverTask(null);
-                  setHandoverSkipNote('');
-                }}
-                className="order-1 sm:order-2 px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold uppercase tracking-widest rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer"
-              >
-                ยืนยันข้ามงาน (Confirm Skip)
-              </button>
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUpdateTaskStatus(
+                        activeHandoverTask.task.id, 
+                        'skipped', 
+                        activeHandoverTask.hourStr,
+                        handoverSkipNote
+                      );
+                      setActiveHandoverTask(null);
+                      setHandoverSkipNote('');
+                    }}
+                    className="order-1 sm:order-2 px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold uppercase tracking-widest rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer"
+                  >
+                    ยืนยันข้ามงาน (Confirm Skip)
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
       )}
 
       {/* ======================================================= */}
-      {/* FULLSCREEN IMAGE LIGHTBOX                               */}
+      {/* FULLSCREEN IMAGE LIGHTBOX — with zoom + pan              */}
       {/* ======================================================= */}
       {focusedImageModal && (
         <div
-          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 animate-fadeIn"
-          onClick={() => { setFocusedImageModal(null); setLightboxImages([]); }}
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 animate-fadeIn select-none"
+          onClick={(e) => { if (e.target === e.currentTarget) closeLightbox(); }}
         >
           <div
-            className="relative max-w-5xl max-h-[92vh] flex items-center justify-center"
+            className="relative w-full h-full flex items-center justify-center overflow-hidden"
             onClick={(e) => e.stopPropagation()}
+            onWheel={lbHandleWheel}
+            onMouseDown={lbHandleMouseDown}
+            onMouseMove={lbHandleMouseMove}
+            onMouseUp={lbHandleMouseUp}
+            onMouseLeave={lbHandleMouseUp}
+            onTouchStart={lbHandleTouchStart}
+            onTouchMove={lbHandleTouchMove}
+            onTouchEnd={lbHandleTouchEnd}
+            style={{ cursor: lbZoom > 1 ? (lbDragRef.current.dragging ? 'grabbing' : 'grab') : 'default' }}
           >
             <img
               src={focusedImageModal}
               alt="ขยายรูปใหญ่"
-              className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl border border-white/10"
+              draggable={false}
+              className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl border border-white/10 transition-transform duration-100"
+              style={{
+                transform: `translate(${lbPan.x}px, ${lbPan.y}px) scale(${lbZoom})`,
+                transformOrigin: 'center center',
+              }}
             />
 
             {/* Prev button */}
             {lightboxImages.length > 1 && lightboxIndex > 0 && (
               <button
                 onClick={() => lightboxNav(-1)}
-                className="absolute left-0 -translate-x-full ml-[-12px] top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 hover:bg-white text-black rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer"
+                className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 hover:bg-white text-black rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer z-10"
                 title="รูปก่อนหน้า"
               >
                 <ChevronLeft className="w-6 h-6" />
@@ -3968,7 +4339,7 @@ export default function App({ session }: { session: Session }) {
             {lightboxImages.length > 1 && lightboxIndex < lightboxImages.length - 1 && (
               <button
                 onClick={() => lightboxNav(1)}
-                className="absolute right-0 translate-x-full mr-[-12px] top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 hover:bg-white text-black rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer"
+                className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 hover:bg-white text-black rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer z-10"
                 title="รูปถัดไป"
               >
                 <ChevronRight className="w-6 h-6" />
@@ -3977,22 +4348,49 @@ export default function App({ session }: { session: Session }) {
 
             {/* Close button */}
             <button
-              onClick={() => { setFocusedImageModal(null); setLightboxImages([]); }}
-              className="absolute -top-3 -right-3 w-9 h-9 bg-white text-black rounded-full flex items-center justify-center shadow-xl hover:bg-black hover:text-white transition-all cursor-pointer z-10"
+              onClick={closeLightbox}
+              className="absolute top-3 right-3 w-9 h-9 bg-white text-black rounded-full flex items-center justify-center shadow-xl hover:bg-black hover:text-white transition-all cursor-pointer z-10"
               title="ปิด"
             >
               <X className="w-5 h-5" />
             </button>
 
+            {/* Zoom controls */}
+            <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/60 rounded-full px-1.5 py-1.5 z-10">
+              <button
+                onClick={lbZoomOut}
+                disabled={lbZoom <= 1}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                title="ซูมออก"
+              >
+                <span className="text-lg font-bold leading-none">−</span>
+              </button>
+              <button
+                onClick={lbZoomReset}
+                className="px-2 h-8 flex items-center justify-center rounded-full text-white text-[10px] font-mono font-bold hover:bg-white/20 active:scale-95 transition-all cursor-pointer min-w-[40px]"
+                title="รีเซ็ตซูม"
+              >
+                {Math.round(lbZoom * 100)}%
+              </button>
+              <button
+                onClick={lbZoomIn}
+                disabled={lbZoom >= 5}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                title="ซูมเข้า"
+              >
+                <span className="text-lg font-bold leading-none">+</span>
+              </button>
+            </div>
+
             {/* Image counter + hint */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3">
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 flex-wrap justify-center px-2 z-10">
               {lightboxImages.length > 1 && (
                 <span className="bg-black/70 text-white text-[10px] font-mono font-bold px-3 py-1.5 rounded-full">
                   {lightboxIndex + 1} / {lightboxImages.length}
                 </span>
               )}
-              <span className="bg-black/70 text-white text-[10px] font-mono font-bold px-3 py-1.5 rounded-full uppercase tracking-wider select-none pointer-events-none">
-                คลิกพื้นที่ว่างเพื่อปิด
+              <span className="bg-black/70 text-white text-[9px] sm:text-[10px] font-mono font-bold px-3 py-1.5 rounded-full uppercase tracking-wider select-none pointer-events-none hidden sm:inline-block">
+                {lbZoom > 1 ? 'ลากเพื่อเลื่อนภาพ · scroll เพื่อซูม' : 'scroll หรือ pinch เพื่อซูม'}
               </span>
             </div>
           </div>
